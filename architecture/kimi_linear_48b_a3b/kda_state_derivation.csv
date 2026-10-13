@@ -1,0 +1,4 @@
+state,shape,elements,dtype,bytes,KiB
+conv,"(12288, 3)",36864,bfloat16,73728,72.0
+recurrent,"(32, 128, 128)",524288,float32,2097152,2048.0
+total_per_kda_layer,,561152,,2170880,2120.0

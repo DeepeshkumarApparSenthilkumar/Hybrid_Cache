@@ -1,0 +1,19 @@
+{
+  "model": "moonshotai/Kimi-Linear-48B-A3B-Base",
+  "mla": {
+    "num_mla_layers": 7,
+    "kv_lora_rank": 512,
+    "qk_rope_head_dim": 64,
+    "persistent_cache_width_elements": 576,
+    "cache_bytes_per_element": 2,
+    "bytes_per_token_per_mla_layer": 1152,
+    "kib_per_token_per_mla_layer": 1.125,
+    "bytes_per_token_all_mla_layers": 8064,
+    "kib_per_token_all_mla_layers": 7.875
+  },
+  "combined_memory_model": {
+    "bounded_kda_state_mib": 41.40625,
+    "formula": "M(L) = KDA_bounded_bytes + L * MLA_bytes_per_token_all_layers"
+  },
+  "note": "MLA persistent cache width is derived as kv_lora_rank + qk_rope_head_dim. Values represent useful cache state under a 2-byte MLA cache dtype and exclude allocator/page overhead."
+}

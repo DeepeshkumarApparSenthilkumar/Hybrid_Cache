@@ -1,0 +1,71 @@
+{
+  "model": "moonshotai/Kimi-Linear-48B-A3B-Base",
+  "architecture": {
+    "num_layers": 27,
+    "num_kda_layers": 20,
+    "num_mla_layers": 7,
+    "kda_layers": [
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11,
+      13,
+      14,
+      15,
+      17,
+      18,
+      19,
+      21,
+      22,
+      23,
+      25,
+      26
+    ],
+    "mla_layers": [
+      4,
+      8,
+      12,
+      16,
+      20,
+      24,
+      27
+    ]
+  },
+  "assumptions": {
+    "tensor_parallel_size": 1,
+    "num_speculative_tokens": 0,
+    "use_kda_recoverssm": false,
+    "model_dtype": "bfloat16",
+    "mamba_ssm_cache_dtype": "auto"
+  },
+  "kda": {
+    "num_heads": 32,
+    "head_dim": 128,
+    "short_conv_kernel_size": 4,
+    "conv_state_shape": [
+      12288,
+      3
+    ],
+    "conv_elements": 36864,
+    "conv_dtype": "bfloat16",
+    "conv_bytes": 73728,
+    "recurrent_state_shape": [
+      32,
+      128,
+      128
+    ],
+    "recurrent_elements": 524288,
+    "recurrent_dtype": "float32",
+    "recurrent_bytes": 2097152,
+    "bytes_per_kda_layer": 2170880,
+    "mib_per_kda_layer": 2.0703125,
+    "bytes_all_kda_layers": 43417600,
+    "mib_all_kda_layers": 41.40625
+  },
+  "note": "Derived useful KDA state from the vLLM KimiLinearForCausalLM state-shape and dtype implementations. This is not measured physical cache allocation."
+}

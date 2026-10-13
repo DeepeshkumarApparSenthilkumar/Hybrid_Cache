@@ -1,0 +1,18 @@
+{
+  "model_id": "moonshotai/Kimi-Linear-48B-A3B-Base",
+  "top_level_model_type": "kimi_linear",
+  "architectures": [
+    "KimiLinearForCausalLM"
+  ],
+  "uses_nested_text_config": false,
+  "model_type": "kimi_linear",
+  "num_hidden_layers": 27,
+  "hidden_size": 2304,
+  "intermediate_size": 9216,
+  "num_attention_heads": 32,
+  "num_key_value_heads": 32,
+  "head_dim": 72,
+  "use_cache": true,
+  "dtype": "bfloat16",
+  "vocab_size": 163840
+}

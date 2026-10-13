@@ -1,0 +1,44 @@
+{
+  "comparison_scope": "Architecture-derived useful inference state. Physical serving-engine allocation may differ because of cache pages, alignment, padding, fragmentation, checkpointing and allocator overhead.",
+  "models": [
+    {
+      "model": "Qwen3.5-0.8B",
+      "architecture": "18 GDN + 6 full attention",
+      "total_layers": 24,
+      "bounded_component": "Gated DeltaNet recurrent state",
+      "growing_component": "Full-attention KV",
+      "bounded_state_mib": 18.6328125,
+      "growing_bytes_per_token": 12288,
+      "growing_kib_per_token": 12.0,
+      "status": "source-derived + vLLM measured"
+    },
+    {
+      "model": "Falcon-H1-0.5B",
+      "architecture": "36 parallel Attention + Mamba-2 layers",
+      "total_layers": 36,
+      "bounded_component": "Mamba-2 recurrent state",
+      "growing_component": "Attention KV",
+      "bounded_state_mib": 27.369140625,
+      "growing_bytes_per_token": 18432,
+      "growing_kib_per_token": 18.0,
+      "status": "source-derived analytical dtype scenario"
+    },
+    {
+      "model": "Kimi-Linear-48B-A3B",
+      "architecture": "20 KDA + 7 MLA",
+      "total_layers": 27,
+      "bounded_component": "KDA recurrent state",
+      "growing_component": "Compressed MLA cache",
+      "bounded_state_mib": 41.40625,
+      "growing_bytes_per_token": 8064,
+      "growing_kib_per_token": 7.875,
+      "status": "source-derived analytical model"
+    }
+  ],
+  "important_caveats": [
+    "Qwen GDN value represents real recurrent-state bytes, not its padded 544-token vLLM page.",
+    "Falcon uses the FP16-conv + FP32-SSM analytical scenario for this comparison. Actual serving dtype must be confirmed experimentally.",
+    "Kimi KDA is bounded state while MLA is compressed token-growing cache.",
+    "These values compare useful state rather than total GPU memory consumption."
+  ]
+}

@@ -1,0 +1,4 @@
+model,architecture,total_layers,bounded_component,growing_component,bounded_state_mib,growing_bytes_per_token,growing_kib_per_token,status
+Qwen3.5-0.8B,18 GDN + 6 full attention,24,Gated DeltaNet recurrent state,Full-attention KV,18.6328125,12288,12.0,source-derived + vLLM measured
+Falcon-H1-0.5B,36 parallel Attention + Mamba-2 layers,36,Mamba-2 recurrent state,Attention KV,27.369140625,18432,18.0,source-derived analytical dtype scenario
+Kimi-Linear-48B-A3B,20 KDA + 7 MLA,27,KDA recurrent state,Compressed MLA cache,41.40625,8064,7.875,source-derived analytical model
