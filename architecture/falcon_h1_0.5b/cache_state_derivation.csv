@@ -1,0 +1,3 @@
+scenario,conv_state_shape,ssm_state_shape,conv_elements,ssm_elements,conv_bytes,conv_kib,ssm_bytes,ssm_kib,total_state_bytes,total_state_kib,attention_kv_bytes_per_token_per_layer,state_equivalent_kv_tokens
+FP16_conv_FP16_ssm,"(1792, 3)","(24, 64, 128)",5376,196608,10752,10.5,393216,384.0,403968,394.5,512,789.0
+FP16_conv_FP32_ssm,"(1792, 3)","(24, 64, 128)",5376,196608,10752,10.5,786432,768.0,797184,778.5,512,1557.0

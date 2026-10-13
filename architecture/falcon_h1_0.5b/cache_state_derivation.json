@@ -1,0 +1,62 @@
+{
+  "model": "tiiuae/Falcon-H1-0.5B-Base",
+  "num_hidden_layers": 36,
+  "tensor_parallel_size": 1,
+  "attention": {
+    "num_kv_heads": 2,
+    "head_dim": 64,
+    "fp16_kv_bytes_per_token_per_layer": 512
+  },
+  "mamba2": {
+    "intermediate_size": 1536,
+    "n_groups": 1,
+    "num_heads": 24,
+    "head_dim": 64,
+    "state_size": 128,
+    "conv_kernel": 4,
+    "conv_dim": 1792,
+    "conv_state_shape": [
+      1792,
+      3
+    ],
+    "temporal_state_shape": [
+      24,
+      64,
+      128
+    ],
+    "conv_elements": 5376,
+    "temporal_elements": 196608
+  },
+  "dtype_scenarios": [
+    {
+      "scenario": "FP16_conv_FP16_ssm",
+      "conv_state_shape": "(1792, 3)",
+      "ssm_state_shape": "(24, 64, 128)",
+      "conv_elements": 5376,
+      "ssm_elements": 196608,
+      "conv_bytes": 10752,
+      "conv_kib": 10.5,
+      "ssm_bytes": 393216,
+      "ssm_kib": 384.0,
+      "total_state_bytes": 403968,
+      "total_state_kib": 394.5,
+      "attention_kv_bytes_per_token_per_layer": 512,
+      "state_equivalent_kv_tokens": 789.0
+    },
+    {
+      "scenario": "FP16_conv_FP32_ssm",
+      "conv_state_shape": "(1792, 3)",
+      "ssm_state_shape": "(24, 64, 128)",
+      "conv_elements": 5376,
+      "ssm_elements": 196608,
+      "conv_bytes": 10752,
+      "conv_kib": 10.5,
+      "ssm_bytes": 786432,
+      "ssm_kib": 768.0,
+      "total_state_bytes": 797184,
+      "total_state_kib": 778.5,
+      "attention_kv_bytes_per_token_per_layer": 512,
+      "state_equivalent_kv_tokens": 1557.0
+    }
+  ]
+}

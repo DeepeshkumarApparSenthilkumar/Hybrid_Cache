@@ -1,0 +1,85 @@
+{
+  "transformers_version": "5.19.0",
+  "architectures": [
+    "FalconH1ForCausalLM"
+  ],
+  "output_hidden_states": false,
+  "return_dict": true,
+  "dtype": "bfloat16",
+  "chunk_size_feed_forward": 0,
+  "is_encoder_decoder": false,
+  "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1"
+  },
+  "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1
+  },
+  "problem_type": null,
+  "vocab_size": 32784,
+  "tie_word_embeddings": false,
+  "hidden_size": 1024,
+  "intermediate_size": 2048,
+  "num_hidden_layers": 36,
+  "num_attention_heads": 8,
+  "num_key_value_heads": 2,
+  "hidden_act": "silu",
+  "initializer_range": 0.02,
+  "rms_norm_eps": 1e-05,
+  "use_cache": true,
+  "num_logits_to_keep": 1,
+  "pad_token_id": 0,
+  "bos_token_id": 1,
+  "eos_token_id": 11,
+  "max_position_embeddings": 16384,
+  "attention_dropout": 0.0,
+  "mamba_d_ssm": 1536,
+  "mamba_n_heads": 24,
+  "mamba_d_head": 64,
+  "mamba_n_groups": 1,
+  "mamba_d_state": 128,
+  "mamba_d_conv": 4,
+  "mamba_expand": 2,
+  "mamba_chunk_size": 128,
+  "mamba_conv_bias": true,
+  "mamba_proj_bias": false,
+  "mamba_norm_before_gate": false,
+  "mamba_rms_norm": false,
+  "time_step_limit": [
+    0.0,
+    Infinity
+  ],
+  "projectors_bias": false,
+  "rope_parameters": {
+    "rope_theta": 100000000000.0,
+    "rope_type": "default"
+  },
+  "lm_head_multiplier": 0.0390625,
+  "embedding_multiplier": 5.656854249492381,
+  "mlp_multipliers": [
+    0.8838834764831844,
+    0.5859375
+  ],
+  "key_multiplier": 0.39062499999999994,
+  "attention_out_multiplier": 0.9375,
+  "attention_in_multiplier": 1.0,
+  "ssm_multipliers": [
+    0.3535533905932738,
+    0.25,
+    0.3535533905932738,
+    0.5,
+    0.3535533905932738
+  ],
+  "ssm_in_multiplier": 1.25,
+  "ssm_out_multiplier": 0.23570226039551587,
+  "attention_bias": false,
+  "mlp_bias": false,
+  "_name_or_path": "tiiuae/Falcon-H1-0.5B-Base",
+  "attn_layer_indices": null,
+  "head_dim": 64,
+  "mamba_use_mlp": true,
+  "mlp_expansion_factor": 8,
+  "model_type": "falcon_h1",
+  "output_attentions": false
+}
