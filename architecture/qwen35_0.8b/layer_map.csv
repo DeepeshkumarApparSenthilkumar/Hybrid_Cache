@@ -1,0 +1,25 @@
+layer,layer_type,state_type,context_scaling
+0,linear_attention,recurrent/linear-attention state,bounded recurrent state
+1,linear_attention,recurrent/linear-attention state,bounded recurrent state
+2,linear_attention,recurrent/linear-attention state,bounded recurrent state
+3,full_attention,KV cache,O(sequence length)
+4,linear_attention,recurrent/linear-attention state,bounded recurrent state
+5,linear_attention,recurrent/linear-attention state,bounded recurrent state
+6,linear_attention,recurrent/linear-attention state,bounded recurrent state
+7,full_attention,KV cache,O(sequence length)
+8,linear_attention,recurrent/linear-attention state,bounded recurrent state
+9,linear_attention,recurrent/linear-attention state,bounded recurrent state
+10,linear_attention,recurrent/linear-attention state,bounded recurrent state
+11,full_attention,KV cache,O(sequence length)
+12,linear_attention,recurrent/linear-attention state,bounded recurrent state
+13,linear_attention,recurrent/linear-attention state,bounded recurrent state
+14,linear_attention,recurrent/linear-attention state,bounded recurrent state
+15,full_attention,KV cache,O(sequence length)
+16,linear_attention,recurrent/linear-attention state,bounded recurrent state
+17,linear_attention,recurrent/linear-attention state,bounded recurrent state
+18,linear_attention,recurrent/linear-attention state,bounded recurrent state
+19,full_attention,KV cache,O(sequence length)
+20,linear_attention,recurrent/linear-attention state,bounded recurrent state
+21,linear_attention,recurrent/linear-attention state,bounded recurrent state
+22,linear_attention,recurrent/linear-attention state,bounded recurrent state
+23,full_attention,KV cache,O(sequence length)

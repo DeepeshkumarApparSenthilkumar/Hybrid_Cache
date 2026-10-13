@@ -1,0 +1,67 @@
+Running warm-up requests...
+Warm-up complete.
+
+1024 | trial=1 | cold  | TTFT=0.1340s | E2E=0.2559s | hits=0.0 / queries=1034.0 | hit_rate=0.0
+1024 | trial=1 | reuse | TTFT=0.0862s | E2E=0.2057s | hits=544.0 / queries=1038.0 | hit_rate=0.5240847784200385
+1024 | trial=2 | cold  | TTFT=0.1340s | E2E=0.2562s | hits=0.0 / queries=1034.0 | hit_rate=0.0
+1024 | trial=2 | reuse | TTFT=0.0855s | E2E=0.2069s | hits=544.0 / queries=1038.0 | hit_rate=0.5240847784200385
+1024 | trial=3 | cold  | TTFT=0.1351s | E2E=0.2568s | hits=0.0 / queries=1034.0 | hit_rate=0.0
+1024 | trial=3 | reuse | TTFT=0.0855s | E2E=0.2067s | hits=544.0 / queries=1038.0 | hit_rate=0.5240847784200385
+1024 | trial=4 | cold  | TTFT=0.1343s | E2E=0.2554s | hits=0.0 / queries=1034.0 | hit_rate=0.0
+1024 | trial=4 | reuse | TTFT=0.0855s | E2E=0.2079s | hits=544.0 / queries=1038.0 | hit_rate=0.5240847784200385
+1024 | trial=5 | cold  | TTFT=0.1328s | E2E=0.2570s | hits=0.0 / queries=1034.0 | hit_rate=0.0
+1024 | trial=5 | reuse | TTFT=0.0904s | E2E=0.2111s | hits=544.0 / queries=1038.0 | hit_rate=0.5240847784200385
+1088 | trial=1 | cold  | TTFT=0.1413s | E2E=0.2638s | hits=0.0 / queries=1098.0 | hit_rate=0.0
+1088 | trial=1 | reuse | TTFT=0.0696s | E2E=0.1818s | hits=1088.0 / queries=1102.0 | hit_rate=0.9872958257713249
+1088 | trial=2 | cold  | TTFT=0.1408s | E2E=0.2580s | hits=0.0 / queries=1098.0 | hit_rate=0.0
+1088 | trial=2 | reuse | TTFT=0.0673s | E2E=0.1767s | hits=1088.0 / queries=1102.0 | hit_rate=0.9872958257713249
+1088 | trial=3 | cold  | TTFT=0.1400s | E2E=0.2609s | hits=0.0 / queries=1098.0 | hit_rate=0.0
+1088 | trial=3 | reuse | TTFT=0.0685s | E2E=0.1843s | hits=1088.0 / queries=1102.0 | hit_rate=0.9872958257713249
+1088 | trial=4 | cold  | TTFT=0.1410s | E2E=0.2633s | hits=0.0 / queries=1098.0 | hit_rate=0.0
+1088 | trial=4 | reuse | TTFT=0.0683s | E2E=0.1765s | hits=1088.0 / queries=1102.0 | hit_rate=0.9872958257713249
+1088 | trial=5 | cold  | TTFT=0.1411s | E2E=0.2625s | hits=0.0 / queries=1098.0 | hit_rate=0.0
+1088 | trial=5 | reuse | TTFT=0.0683s | E2E=0.1805s | hits=1088.0 / queries=1102.0 | hit_rate=0.9872958257713249
+2048 | trial=1 | cold  | TTFT=0.2599s | E2E=0.3846s | hits=0.0 / queries=2058.0 | hit_rate=0.0
+2048 | trial=1 | reuse | TTFT=0.1057s | E2E=0.2305s | hits=1632.0 / queries=2062.0 | hit_rate=0.7914645974781765
+2048 | trial=2 | cold  | TTFT=0.2630s | E2E=0.3848s | hits=0.0 / queries=2058.0 | hit_rate=0.0
+2048 | trial=2 | reuse | TTFT=0.1051s | E2E=0.2264s | hits=1632.0 / queries=2062.0 | hit_rate=0.7914645974781765
+2048 | trial=3 | cold  | TTFT=0.2599s | E2E=0.3860s | hits=0.0 / queries=2058.0 | hit_rate=0.0
+2048 | trial=3 | reuse | TTFT=0.1054s | E2E=0.2242s | hits=1632.0 / queries=2062.0 | hit_rate=0.7914645974781765
+2048 | trial=4 | cold  | TTFT=0.2584s | E2E=0.3812s | hits=0.0 / queries=2058.0 | hit_rate=0.0
+2048 | trial=4 | reuse | TTFT=0.1053s | E2E=0.2241s | hits=1632.0 / queries=2062.0 | hit_rate=0.7914645974781765
+2048 | trial=5 | cold  | TTFT=0.2596s | E2E=0.3796s | hits=0.0 / queries=2058.0 | hit_rate=0.0
+2048 | trial=5 | reuse | TTFT=0.1055s | E2E=0.2310s | hits=1632.0 / queries=2062.0 | hit_rate=0.7914645974781765
+2176 | trial=1 | cold  | TTFT=0.2885s | E2E=0.4146s | hits=0.0 / queries=2186.0 | hit_rate=0.0
+2176 | trial=1 | reuse | TTFT=0.0795s | E2E=0.1959s | hits=2176.0 / queries=2190.0 | hit_rate=0.993607305936073
+2176 | trial=2 | cold  | TTFT=0.2933s | E2E=0.4168s | hits=0.0 / queries=2186.0 | hit_rate=0.0
+2176 | trial=2 | reuse | TTFT=0.0800s | E2E=0.2000s | hits=2176.0 / queries=2190.0 | hit_rate=0.993607305936073
+2176 | trial=3 | cold  | TTFT=0.2903s | E2E=0.4141s | hits=0.0 / queries=2186.0 | hit_rate=0.0
+2176 | trial=3 | reuse | TTFT=0.0797s | E2E=0.1951s | hits=2176.0 / queries=2190.0 | hit_rate=0.993607305936073
+2176 | trial=4 | cold  | TTFT=0.2902s | E2E=0.4172s | hits=0.0 / queries=2186.0 | hit_rate=0.0
+2176 | trial=4 | reuse | TTFT=0.0787s | E2E=0.1941s | hits=2176.0 / queries=2190.0 | hit_rate=0.993607305936073
+2176 | trial=5 | cold  | TTFT=0.2891s | E2E=0.4112s | hits=0.0 / queries=2186.0 | hit_rate=0.0
+2176 | trial=5 | reuse | TTFT=0.0794s | E2E=0.1961s | hits=2176.0 / queries=2190.0 | hit_rate=0.993607305936073
+4096 | trial=1 | cold  | TTFT=0.6371s | E2E=0.7707s | hits=0.0 / queries=4106.0 | hit_rate=0.0
+4096 | trial=1 | reuse | TTFT=0.1366s | E2E=0.2643s | hits=3808.0 / queries=4110.0 | hit_rate=0.9265206812652068
+4096 | trial=2 | cold  | TTFT=0.6352s | E2E=0.7631s | hits=0.0 / queries=4106.0 | hit_rate=0.0
+4096 | trial=2 | reuse | TTFT=0.1333s | E2E=0.2648s | hits=3808.0 / queries=4110.0 | hit_rate=0.9265206812652068
+4096 | trial=3 | cold  | TTFT=0.6346s | E2E=0.7639s | hits=0.0 / queries=4106.0 | hit_rate=0.0
+4096 | trial=3 | reuse | TTFT=0.1330s | E2E=0.2612s | hits=3808.0 / queries=4110.0 | hit_rate=0.9265206812652068
+4096 | trial=4 | cold  | TTFT=0.6347s | E2E=0.7649s | hits=0.0 / queries=4106.0 | hit_rate=0.0
+4096 | trial=4 | reuse | TTFT=0.1334s | E2E=0.2649s | hits=3808.0 / queries=4110.0 | hit_rate=0.9265206812652068
+4096 | trial=5 | cold  | TTFT=0.6339s | E2E=0.7636s | hits=0.0 / queries=4106.0 | hit_rate=0.0
+4096 | trial=5 | reuse | TTFT=0.1322s | E2E=0.2651s | hits=3808.0 / queries=4110.0 | hit_rate=0.9265206812652068
+4352 | trial=1 | cold  | TTFT=0.6911s | E2E=0.8214s | hits=0.0 / queries=4362.0 | hit_rate=0.0
+4352 | trial=1 | reuse | TTFT=0.0929s | E2E=0.2166s | hits=4352.0 / queries=4366.0 | hit_rate=0.9967934035730646
+4352 | trial=2 | cold  | TTFT=0.6877s | E2E=0.8183s | hits=0.0 / queries=4362.0 | hit_rate=0.0
+4352 | trial=2 | reuse | TTFT=0.0935s | E2E=0.2180s | hits=4352.0 / queries=4366.0 | hit_rate=0.9967934035730646
+4352 | trial=3 | cold  | TTFT=0.6899s | E2E=0.8188s | hits=0.0 / queries=4362.0 | hit_rate=0.0
+4352 | trial=3 | reuse | TTFT=0.0897s | E2E=0.2131s | hits=4352.0 / queries=4366.0 | hit_rate=0.9967934035730646
+4352 | trial=4 | cold  | TTFT=0.6891s | E2E=0.8208s | hits=0.0 / queries=4362.0 | hit_rate=0.0
+4352 | trial=4 | reuse | TTFT=0.0930s | E2E=0.2214s | hits=4352.0 / queries=4366.0 | hit_rate=0.9967934035730646
+4352 | trial=5 | cold  | TTFT=0.6944s | E2E=0.8196s | hits=0.0 / queries=4362.0 | hit_rate=0.0
+4352 | trial=5 | reuse | TTFT=0.0929s | E2E=0.2210s | hits=4352.0 / queries=4366.0 | hit_rate=0.9967934035730646
+
+Saved:
+  results/vllm_qwen35_repeated_raw.csv
+  results/vllm_qwen35_repeated_summary.csv
