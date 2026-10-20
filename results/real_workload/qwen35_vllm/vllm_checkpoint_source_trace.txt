@@ -1,0 +1,834 @@
+===== A. PREFILL CHECKPOINT IMPLEMENTATION =====
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+import torch
+
+from vllm.config import VllmConfig
+from vllm.utils.math_utils import cdiv
+from vllm.utils.torch_utils import async_tensor_h2d
+from vllm.v1.attention.backend import CommonAttentionMetadata
+from vllm.v1.attention.backends.utils import NULL_BLOCK_ID
+from vllm.v1.kv_cache_interface import (
+    MambaSpec,
+    get_mamba_prefill_checkpoint_position,
+    is_mamba_prefill_checkpoint_valid,
+)
+
+
+def compute_mamba_prefill_checkpoints(
+    seq_lens: list[int],
+    query_lens: list[int],
+    hash_block_size: int,
+    mamba_block_size: int,
+    checkpoint_alignment: int | None,
+    drop_eagle_block: bool,
+) -> tuple[list[int], list[int]]:
+    """Per-row internal prefill checkpoint offsets and cache block columns.
+
+    Backends call this instead of re-deriving the rules, so they decline in
+    lockstep with the scheduler and ``MambaManager``: allocating a checkpoint
+    block without writing it leaves the prefix cache serving uninitialized
+    state.
+
+    Returns:
+        ``(offsets, cols)``: the checkpoint's offset into each row's query and
+        its block-table column. ``0`` and ``-1`` mean the row has none.
+
+    """
+    offsets: list[int] = []
+    cols: list[int] = []
+    for seq_len, query_len in zip(seq_lens, query_lens):
+        query_start = seq_len - query_len
+        position = get_mamba_prefill_checkpoint_position(
+            seq_len, hash_block_size, drop_eagle_block=drop_eagle_block
+        )
+        valid = is_mamba_prefill_checkpoint_valid(
+            query_start=query_start,
+            query_end=seq_len,
+            checkpoint_position=position,
+            hash_block_size=hash_block_size,
+            mamba_block_size=mamba_block_size,
+            checkpoint_alignment=checkpoint_alignment,
+        )
+        offsets.append(position - query_start if valid else 0)
+        cols.append(cdiv(seq_len, mamba_block_size) - 2 if valid else -1)
+    return offsets, cols
+
+
+@dataclass
+class MambaPrefillCheckpointMetadata:
+    checkpoint_offsets: torch.Tensor
+    state_indices: torch.Tensor
+
+
+class MambaPrefillCheckpointBuilder:
+    """Build backend-neutral prefill checkpoint locations."""
+
+    def __init__(self, vllm_config: VllmConfig, kv_cache_spec: MambaSpec) -> None:
+        self.vllm_config = vllm_config
+        self.kv_cache_spec = kv_cache_spec
+
+    def build(
+        self,
+        m: CommonAttentionMetadata,
+        request_rows: list[int],
+    ) -> MambaPrefillCheckpointMetadata | None:
+        if self.vllm_config.cache_config.mamba_cache_mode != "align":
+            return None
+        if self.kv_cache_spec.num_prefill_checkpoint_blocks == 0:
+            return None
+        assert m.seq_lens_cpu_upper_bound is not None
+        all_query_lens = m.query_start_loc_cpu.diff().tolist()
+        query_lens = [all_query_lens[row] for row in request_rows]
+        seq_lens = m.seq_lens_cpu_upper_bound.tolist()
+        block_size = self.kv_cache_spec.block_size
+        hash_block_size = self.vllm_config.cache_config.prefix_match_unit or block_size
+        speculative_config = self.vllm_config.speculative_config
+        drop_eagle_block = (
+            speculative_config is not None and speculative_config.use_eagle_block_drop()
+        )
+        checkpoint_offsets, checkpoint_cols = compute_mamba_prefill_checkpoints(
+            [seq_lens[row] for row in request_rows],
+            query_lens,
+            hash_block_size=hash_block_size,
+            mamba_block_size=block_size,
+            checkpoint_alignment=self.kv_cache_spec.prefill_checkpoint_alignment,
+            drop_eagle_block=drop_eagle_block,
+        )
+        if not any(checkpoint_offsets):
+            return None
+        checkpoint_offsets_tensor = async_tensor_h2d(
+            checkpoint_offsets,
+            dtype=torch.int32,
+            device=m.query_start_loc.device,
+        )
+        request_rows_tensor = async_tensor_h2d(
+            request_rows, dtype=torch.int64, device=m.query_start_loc.device
+        )
+        checkpoint_cols_tensor = async_tensor_h2d(
+            checkpoint_cols, dtype=torch.int64, device=m.query_start_loc.device
+        )
+        checkpoint_state_indices = m.block_table_tensor[
+            request_rows_tensor, checkpoint_cols_tensor
+        ]
+        checkpoint_state_indices = torch.where(
+            checkpoint_cols_tensor >= 0,
+            checkpoint_state_indices,
+            NULL_BLOCK_ID,
+        )
+        return MambaPrefillCheckpointMetadata(
+            checkpoint_offsets_tensor,
+            checkpoint_state_indices,
+        )
+
+
+class MambaPrefillCheckpointExporter(ABC):
+    """Export a mid-prefill checkpoint into backend-specific paged states."""
+
+===== B. CHECKPOINT POSITION FORMULA =====
+        return all(isinstance(spec, KpoolTailSpec) for spec in kv_cache_specs.values())
+
+    @property
+    def prefix_cacheable(self) -> bool:
+        return False
+
+    @property
+    def uses_slot_mapping(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True)
+class MambaSpec(KVCacheSpec):
+    shapes: tuple[tuple[int, ...], ...]
+    dtypes: tuple[torch.dtype, ...]
+    page_size_padded: int | None = None
+    mamba_type: MambaAttentionBackendEnum = MambaAttentionBackendEnum.MAMBA2
+    mamba_cache_mode: str = "none"
+    num_speculative_blocks: int = 0
+    num_prefill_checkpoint_blocks: int = 0
+    prefill_checkpoint_alignment: int | None = None
+    num_heads: int = 1
+    tokens_per_state: int = -1
+    # False: the state is sharded across TP ranks (e.g. GDN). True: every TP
+    # rank holds the full state (e.g. the replicated PLE conv state).
+    tp_replicated: bool = False
+
+    @property
+    def state_content_size_bytes(self) -> int:
+        return sum(
+            prod(shape) * get_dtype_size(dtype)
+            for (shape, dtype) in zip(self.shapes, self.dtypes)
+        )
+
+    @property
+    def real_page_size_bytes(self) -> int:
+        return self.state_content_size_bytes
+
+    @property
+    def page_size_bytes(self) -> int:
+        page_size = sum(
+            prod(shape) * get_dtype_size(dtype)
+            for (shape, dtype) in zip(self.shapes, self.dtypes)
+        )
+        if self.page_size_padded is not None:
+            assert self.page_size_padded >= page_size
+            return self.page_size_padded
+        return page_size
+
+    @property
+    def block_table_token_alignment(self) -> int | None:
+        return None
+
+    def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
+        if vllm_config.cache_config.mamba_cache_mode == "all":
+            max_model_len = vllm_config.model_config.max_model_len
+            return (
+                cdiv(max_model_len, self.block_size) + self.num_speculative_blocks
+            ) * self.page_size_bytes
+        elif vllm_config.cache_config.mamba_cache_mode == "align":
+            return self.page_size_bytes * (
+                2 + self.num_speculative_blocks + self.num_prefill_checkpoint_blocks
+            )
+        else:
+            return self.page_size_bytes * (1 + self.num_speculative_blocks)
+
+    def max_num_blocks_per_req(self, vllm_config: VllmConfig, max_len: int) -> int:
+        # Mamba state is replicated across DCP/PCP ranks, never sharded, so
+        # no CP scaling applies.
+        if vllm_config.cache_config.mamba_cache_mode == "align":
+            # Block table rows are position-indexed over the full sequence
+            # even though only 2 + num_speculative_blocks state blocks are
+            # resident at a time (earlier states are nulled out by
+            # remove_skipped_blocks), so the row length must cover max_len
+            # rather than max_memory_usage_bytes.
+            return cdiv(max_len, self.block_size) + self.num_speculative_blocks
+        return cdiv(self.max_memory_usage_bytes(vllm_config), self.page_size_bytes)
+
+    def is_uniform_with_collection(
+        self, kv_cache_specs: dict[str, KVCacheSpec]
+    ) -> bool:
+        return all(
+            isinstance(spec, MambaSpec)
+            and spec.num_speculative_blocks == self.num_speculative_blocks
+            and spec.num_prefill_checkpoint_blocks == self.num_prefill_checkpoint_blocks
+            and spec.prefill_checkpoint_alignment == self.prefill_checkpoint_alignment
+            and spec.page_size_bytes == self.page_size_bytes
+            and spec.tp_replicated == self.tp_replicated
+            for spec in kv_cache_specs.values()
+        )
+
+
+def get_mamba_prefill_checkpoint_position(
+    num_tokens: int,
+    hash_block_size: int,
+    drop_eagle_block: bool,
+) -> int:
+    """Return the reusable Mamba checkpoint boundary for a prefill."""
+    checkpoint_position = (num_tokens - 1) // hash_block_size * hash_block_size
+    if drop_eagle_block:
+        checkpoint_position -= hash_block_size
+    return max(checkpoint_position, 0)
+
+
+def is_mamba_prefill_checkpoint_valid(
+    query_start: int,
+    query_end: int,
+    checkpoint_position: int,
+    hash_block_size: int,
+    mamba_block_size: int,
+    checkpoint_alignment: int | None,
+) -> bool:
+    """Whether a backend can export the checkpoint in this query."""
+    if checkpoint_alignment is None:
+        return False
+    assert checkpoint_alignment > 0
+
+    initial_state_col = (query_start - 1) // mamba_block_size
+    checkpoint_col = cdiv(query_end, mamba_block_size) - 2
+    return (
+        query_start % hash_block_size == 0
+        and checkpoint_col > initial_state_col
+        and query_start + hash_block_size <= checkpoint_position
+        and query_start < checkpoint_position < query_end
+        and (checkpoint_position - query_start) % checkpoint_alignment == 0
+    )
+
+
+@dataclass(frozen=True)
+class EncoderOnlyAttentionSpec(AttentionSpec):
+    def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
+===== C. SCHEDULER CHECKPOINT LOGIC =====
+            ),
+        )
+        # Bind after construction so connectors can access the cache manager.
+        if self.connector is not None:
+            self.connector.bind_kv_cache_manager(self.kv_cache_manager)
+
+        self.use_pp = self.parallel_config.pipeline_parallel_size > 1
+        self.use_v2_model_runner = vllm_config.use_v2_model_runner
+        # Scheduler iteration counter. Drives the V2+PP+async decode-throttle
+        # cadence (`next_decode_eligible_step`).
+        self.current_step = 0
+        # DP prefill balancing: Flag to track whether the last cadence-aligned
+        # prefill batch fully drained the waiting queue. Prefill throttling
+        # is disabled in this case.
+        self.prefill_capacity_bound = False
+        self.scheduler_reserve_full_isl = (
+            self.scheduler_config.scheduler_reserve_full_isl
+        )
+
+        self.has_mamba_layers = kv_cache_config.has_mamba_layers
+        self.needs_kv_cache_zeroing = kv_cache_config.needs_kv_cache_zeroing
+        # Blocks that async KV loads will overwrite this step, skipped from
+        # zeroing since the zeroing could race the out-of-band write.
+        self._skip_zero_block_ids: set[int] = set()
+        self.need_mamba_block_aligned_split = (
+            self.has_mamba_layers and self.cache_config.mamba_cache_mode == "align"
+        )
+        # TODO: Support models with multiple Mamba specs that require different
+        # prefill checkpoint alignments instead of selecting the first one.
+        self.mamba_prefill_checkpoint_alignment = next(
+            (
+                group.kv_cache_spec.prefill_checkpoint_alignment
+                for group in kv_cache_config.kv_cache_groups
+                if isinstance(group.kv_cache_spec, MambaSpec)
+            ),
+            None,
+        )
+        self.mamba_has_prefill_checkpoint_blocks = self.has_mamba_layers and all(
+            not isinstance(group.kv_cache_spec, MambaSpec)
+            or group.kv_cache_spec.num_prefill_checkpoint_blocks > 0
+            for group in kv_cache_config.kv_cache_groups
+        )
+        # A finer prefix_match_unit is configured: a mamba partial tail entry
+        # can only be registered by a step ending exactly at the prompt's last
+        # hash boundary, so the split adds that stop.
+        self.mamba_partial_cache_hit = (
+            self.need_mamba_block_aligned_split
+            and self.hash_block_size < self.block_size
+            and self.kv_cache_manager.coordinator.enable_partial_hash_hits
+        )
+        # Opt-in: also stop at the junction, where an eagle sibling resumes. The
+        # manager decides whether it can check-point there (per-group eagle bit,
+        # no MTP re-prefill tail); splitting for a stop it would refuse costs a
+        # forward pass and displaces the block-boundary stop.
+        self.mamba_shared_prefix_checkpoint = (
+            self.mamba_partial_cache_hit
+            and self.kv_cache_manager.mamba_shared_prefix_checkpoint
+        )
+
+        # Counts of non-empty steps scheduled / processed. update_from_output
+        # is called once per scheduled step in FIFO order, so these stay in sync.
+        self.sched_step_seq = 0
+        self.processed_step_seq = 0
+        # FIFO of (fence_seq, blocks): blocks become safe to free once
+        # processed_step_seq >= fence_seq.
+        self.deferred_frees: deque[tuple[int, list[KVCacheBlock]]] = deque()
+
+        self.perf_metrics: ModelMetrics | None = None
+        if self.log_stats and vllm_config.observability_config.enable_mfu_metrics:
+            self.perf_metrics = ModelMetrics(vllm_config)
+
+        self.aux_output_connector = (
+            AuxOutputSchedulerConnector()
+            if vllm_config.aux_output_config.enabled
+            else None
+        )
+        self.return_sampling_mask = vllm_config.model_config.return_sampling_mask
+
+        self._pause_state: PauseState = PauseState.UNPAUSED
+
+        # In-flight requests still prefilling (prefill chunks + in-progress
+        # async KV loads). Their remaining-block reservation gates async loads.
+        self._inflight_prefills: set[Request] = set()
+
+    def _mamba_block_aligned_split(
+        self,
+        request: Request,
+        num_new_tokens: int,
+        num_new_local_computed_tokens: int = 0,
+        num_external_computed_tokens: int = 0,
+    ) -> int:
+        """Clip a prefill chunk so it ends where Mamba state must be cached.
+
+        In "align" cache mode reusable SSM states are materialized at block
+        boundaries, plus mandatory early stops (the prompt's partial-tail hash
+        boundary, a detected shared-prefix junction). If a block is larger
+        than the configured prefill chunk limit, intermediate chunks keep
+        private running state until they reach the next cacheable position.
+        """
+        start = (
+            request.num_computed_tokens
+            + num_new_local_computed_tokens
+            + num_external_computed_tokens
+        )
+        # Split only during prefill: `request.num_tokens - 1` extends this to
+        # resumed requests replaying their output tokens.
+        prefill_end = max(request.num_prompt_tokens, request.num_tokens - 1)
+        if start >= prefill_end:
+            return num_new_tokens
+
+        block_size = self.cache_config.block_size
+        # The last block-aligned position whose state can be cached. With
+        # Eagle, FullAttn prunes the last matching block, so back off one
+        # block to avoid a Mamba cache miss.
+        last_cache_position = request.num_tokens - request.num_tokens % block_size
+        if self.use_eagle_block_drop:
+            last_cache_position = max(last_cache_position - block_size, 0)
+
+        end = start + num_new_tokens
+        checkpoint_position = get_mamba_prefill_checkpoint_position(
+            prefill_end,
+            self.hash_block_size,
+            drop_eagle_block=self.use_eagle_block_drop,
+        )
+        use_internal_checkpoint = (
+            self.mamba_has_prefill_checkpoint_blocks
+            and end >= prefill_end
+            and is_mamba_prefill_checkpoint_valid(
+                query_start=start,
+                query_end=end,
+                checkpoint_position=checkpoint_position,
+                hash_block_size=self.hash_block_size,
+                mamba_block_size=block_size,
+                checkpoint_alignment=self.mamba_prefill_checkpoint_alignment,
+            )
+        )
+        if use_internal_checkpoint:
+            last_cache_position = 0
+        # Invariant: slot p holds the state after exactly (p + 1) * block_size
+        # tokens. State is written at chunk ends, so chunk ends must be block
+        # aligned. Exempt: the prompt's last chunk, whose slot decode advances
+        # to the boundary. A block too wide for one chunk advances sub-block
+        # and re-aligns at the next boundary.
+        if end < prefill_end:
+            max_prefill_tokens = self.max_num_scheduled_tokens
+            long_prefill_threshold = self.scheduler_config.long_prefill_token_threshold
+            if long_prefill_threshold > 0:
+                max_prefill_tokens = min(max_prefill_tokens, long_prefill_threshold)
+            aligned_end = end // block_size * block_size
+            if aligned_end > start or block_size <= max_prefill_tokens:
+                end = aligned_end
+===== D. CACHE MANAGER CHECKPOINT ALLOCATION =====
+            The number of tokens that will be skipped for attention computation.
+
+        """
+        num_skipped_tokens = (
+            num_computed_tokens // self.attention_chunk_size
+        ) * self.attention_chunk_size
+        return num_skipped_tokens
+
+    def get_num_common_prefix_blocks(self, running_request_id: str) -> int:
+        """Cascade attention is not supported by chunked local attention."""
+        return 0
+
+
+class MambaManager(SingleTypeKVCacheManager):
+    supports_fine_grained_hash_lookup: ClassVar[bool] = True
+
+    @property
+    def has_positionally_stable_blocks(self) -> bool:
+        # Align-mode Mamba can null interior states and relocate speculative
+        # blocks in place. Other modes retain positional identity.
+        return self.mamba_cache_mode != "align"
+
+    def __init__(
+        self, kv_cache_spec: MambaSpec, block_pool: BlockPool, **kwargs
+    ) -> None:
+        super().__init__(kv_cache_spec, block_pool, **kwargs)
+        self.mamba_cache_mode = kv_cache_spec.mamba_cache_mode
+        self.num_speculative_blocks: int = kv_cache_spec.num_speculative_blocks
+        self.has_prefill_checkpoint_blocks = (
+            self.mamba_cache_mode == "align"
+            and kv_cache_spec.num_prefill_checkpoint_blocks > 0
+        )
+        # Mamba checkpoints follow Eagle's global replay boundary.
+        self.drop_eagle_checkpoint_block = False
+        self.cached_blocks_this_step: set[BlockHashWithGroupId] = set()
+        if self.mamba_cache_mode == "align":
+            # Mapping from request ID to the index of the block
+            # allocated in the previous step
+            self.last_state_block_idx: dict[str, int] = {}
+            self._num_retired_blocks: dict[str, int] = {}
+            # The set of the requests that have been allocated blocks
+            self._allocated_block_reqs: set[str] = set()
+            # checkpoint position and reserved block index for the current
+            # allocation.
+            self._checkpoints: dict[str, tuple[int, int]] = {}
+            # Requests that registered their own last-prompt-boundary partial
+            # tail (producers). A later CoW hands its private copy to the
+            # connector; a request that finishes first hands off this table
+            # source directly.
+            self._producer_partial_tail_reqs: dict[str, tuple[KVCacheBlock, int]] = {}
+
+    @classmethod
+    def find_longest_cache_hit(
+        cls,
+        block_hashes: BlockHashList,
+        max_length: int,
+        kv_cache_group_ids: list[int],
+        block_pool: BlockPool,
+        kv_cache_spec: KVCacheSpec,
+        drop_eagle_block: bool,
+        alignment_tokens: int,
+        dcp_world_size: int = 1,
+        pcp_world_size: int = 1,
+    ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
+        assert isinstance(kv_cache_spec, MambaSpec), (
+            "MambaManager can only be used for mamba groups"
+        )
+        assert dcp_world_size == 1, "DCP not support mamba now."
+        assert pcp_world_size == 1, "PCP not support mamba now."
+        block_hashes = resolve_block_hashes(
+            block_hashes,
+            block_pool.hash_block_size,
+            kv_cache_spec.block_size,
+            supports_fine_grained_hash_lookup=cls.supports_fine_grained_hash_lookup,
+            alignment_tokens=alignment_tokens,
+        )
+        computed_blocks: tuple[list[KVCacheBlock], ...] = tuple(
+            [] for _ in range(len(kv_cache_group_ids))
+        )
+        hit_length = 0
+
+        block_size = kv_cache_spec.block_size
+        if alignment_tokens < block_size and block_size % alignment_tokens == 0:
+            # list or lazy BlobBlockHashes view
+            assert isinstance(block_hashes, Sequence)
+            hash_block_size = alignment_tokens
+            scale_factor = block_size // hash_block_size
+            max_num_partial_units = min(
+                max_length // hash_block_size, len(block_hashes)
+            )
+            for fine_idx in range(max_num_partial_units - 1, -1, -1):
+                num_tokens = (fine_idx + 1) * hash_block_size
+                block_hash = block_hashes[fine_idx]
+                if cached_block := block_pool.get_cached_block(
+                    block_hash, kv_cache_group_ids
+                ):
+                    block_idx = fine_idx // scale_factor
+                    for computed, cached in zip(computed_blocks, cached_block):
+                        computed.extend([block_pool.null_block] * block_idx)
+                        computed.append(cached)
+                    hit_length = num_tokens
+                    break
+            return computed_blocks, hit_length
+
+        max_num_blocks = max_length // block_size
+        # Search from right to left and early stop when a match is found.
+        for i in range(max_num_blocks - 1, -1, -1):
+            if cached_block := block_pool.get_cached_block(
+                block_hashes[i], kv_cache_group_ids
+            ):
+                # When enable Mamba prefix caching, `block_size` will be aligned
+                # across full attention layers and Mamba layers to ensure the
+                # prefix hit length aligned at block
+                if (
+                    block_size != alignment_tokens  # Faster for common case.
+                    and (i + 1) * block_size % alignment_tokens != 0
+                ):
+                    continue
+                for computed, cached in zip(computed_blocks, cached_block):
+                    # the hit length logic later assumes:
+                    #  hit_length = len(hit_blocks_other_attn[0])
+                    #               * self.other_block_size
+                    # so we insert dummy blocks at the beginning:
+                    computed.extend([block_pool.null_block] * i)
+                    computed.append(cached)
+                hit_length = (i + 1) * block_size
+                break  # we just need the last match - early stopping
+
+        return computed_blocks, hit_length
+
+    @classmethod
+    def reachable_block_mask(
+        cls,
+        start_block: int,
+        end_block: int,
+        alignment_tokens: int | None,
+        kv_cache_spec: KVCacheSpec,
+        use_eagle: bool,
+        retention_interval: int | None = None,
+        reachable_boundaries: Sequence[int] = (),
+        dcp_world_size: int = 1,
+        final_segment_end_block: int | None = None,
+    ) -> list[bool] | None:
+        """Sparse Mamba state-snapshot retention.
+
+        ``retention_interval``:
+
+          ``None`` -> dense (cache every block; default, unchanged behavior)
+          ``0``    -> keep only the ``reachable_boundaries`` states
+          ``> 0``  -> keep one state per ``retention_interval``-sized segment
+
+        ``reachable_boundaries`` are proven reuse points (the replay boundary and
+        any cross-request shared-prefix junction, Marconi-style APC); their
+        boundary state is always kept so sparse retention does not defeat reuse.
+        """
+        if retention_interval is None or alignment_tokens is None:
+            # Dense caching (default) or no alignment constraint imposed.
+            return None
+        assert isinstance(kv_cache_spec, MambaSpec)
+        block_size = kv_cache_spec.block_size
+        mask = [False] * (end_block - start_block)
+
+        # (1) Segment-boundary states. A Mamba hit needs exactly the single
+        # state block ending on the boundary (no window, and draft models have
+        # no mamba layers, so no eagle shift). Block ``i`` ends at token
+        # ``(i + 1) * block_size``.
+        segment_tokens = None if retention_interval == 0 else retention_interval
+        if segment_tokens is not None:
+            per_segment = segment_tokens // block_size
+            if per_segment <= 1:
+                # Interval at/below the block size: every block is a boundary.
+                return None
+            first_boundary = (
+                start_block + per_segment
+            ) // per_segment * per_segment - 1
+            for i in range(first_boundary - start_block, len(mask), per_segment):
+                mask[i] = True
+
+        # (2) Reachable-boundary states: the replay boundary (``num_prompt - 1``,
+        # capped by ``get_computed_blocks``) and any shared-prefix junction, both
+        # of which segments would otherwise skip under sparse retention. A Mamba
+        # hit needs exactly the single state block ending on the boundary.
+        for boundary_tokens in reachable_boundaries:
+            aligned = boundary_tokens // alignment_tokens * alignment_tokens
+            boundary_block = aligned // block_size - 1
+            if start_block <= boundary_block < end_block:
+                mask[boundary_block - start_block] = True
+
+        return mask
+
+    def _remove_blocks_in_range(
+        self, request_id: str, first_block: int, last_block: int
+    ) -> None:
+        if self.mamba_cache_mode != "align":
+            return super()._remove_blocks_in_range(request_id, first_block, last_block)
+        blocks = self.req_to_blocks.get(request_id, [])
+        first_block = max(first_block, self._num_retired_blocks.get(request_id, 0))
+        last_block = min(last_block, len(blocks))
+        if first_block >= last_block:
+            return
+        freed: list[KVCacheBlock] = []
+        # Mamba prefill leaves null gaps between states awaiting retirement.
+        for i in range(last_block - 1, first_block - 1, -1):
+            if blocks[i].is_null:
+                continue
+            freed.append(blocks[i])
+            blocks[i] = self._null_block
+        if freed:
+            self.block_pool.free_blocks(freed)
+        self._num_retired_blocks[request_id] = last_block
+
+    def remove_skipped_blocks(
+        self,
+        request_id: str,
+        processed_computed_tokens: int,
+        num_prompt_tokens: int | None = None,
+    ) -> None:
+        assert isinstance(self.kv_cache_spec, MambaSpec)
+
+        super().remove_skipped_blocks(
+            request_id, processed_computed_tokens, num_prompt_tokens
+        )
+        if self.mamba_cache_mode == "align":
+            # `last_state_block_idx` refers to the block index allocated two steps ago.
+            # The block allocated in the previous step is used to copy Mamba states
+            # into the block allocated in the current step; the earlier block is
+            # no longer needed and should be freed here.
+            last_state_block_idx = self.last_state_block_idx.get(request_id)
+            # Blocks allocated during prefill may be non-contiguous. Use
+            # `last_state_block_idx` to free the appropriate block and replace it
+            # with a null block.
+            if (
+                last_state_block_idx is not None
+                and last_state_block_idx
+                < cdiv(processed_computed_tokens, self.block_size) - 1
+            ):
+                blocks = self.req_to_blocks[request_id]
+                if blocks[last_state_block_idx] != self._null_block:
+                    self.block_pool.free_blocks([blocks[last_state_block_idx]])
+                    blocks[last_state_block_idx] = self._null_block
+
+    def get_num_common_prefix_blocks(self, running_request_id: str) -> int:
+        """Cascade attention is not supported by mamba"""
+        return 0
+
+    def _needs_internal_checkpoint(
+        self,
+        request_id: str,
+        query_start: int,
+        query_end: int,
+        checkpoint_position: int,
+    ) -> bool:
+        assert isinstance(self.kv_cache_spec, MambaSpec)
+        checkpoint_idx = cdiv(query_end, self.block_size) - 2
+        blocks = self.req_to_blocks[request_id]
+        return (
+            self.has_prefill_checkpoint_blocks
+            and is_mamba_prefill_checkpoint_valid(
+                query_start=query_start,
+                query_end=query_end,
+                checkpoint_position=checkpoint_position,
+                hash_block_size=self.block_pool.hash_block_size,
+                mamba_block_size=self.block_size,
+                checkpoint_alignment=(self.kv_cache_spec.prefill_checkpoint_alignment),
+            )
+            and checkpoint_idx >= 0
+            and (
+                checkpoint_idx >= len(blocks)
+                or blocks[checkpoint_idx].is_null
+                or (
+                    request_id in self._allocated_block_reqs
+                    and checkpoint_idx >= len(blocks) - self.num_speculative_blocks
+                )
+            )
+        )
+
+    def get_num_blocks_to_allocate(
+        self,
+        request_id: str,
+        num_tokens: int,
+        new_computed_blocks: Sequence[KVCacheBlock],
+        total_computed_tokens: int,
+        num_local_computed_tokens: int,
+        num_tokens_main_model: int,
+        apply_admission_cap: bool = False,
+    ) -> int:
+        assert isinstance(self.kv_cache_spec, MambaSpec)
+        if (
+            len(new_computed_blocks) > 0
+            and new_computed_blocks[-1].block_hash in self.cached_blocks_this_step
+        ):
+            # Mamba can't rely on blocks generated by other requests in the current step
+            # To put it in the next step, we return num_gpu_blocks + 1 so
+            # that kv_cache_manager will think there is no enough blocks to allocate now
+            # and don't schedule it in the current step.
+            return self.block_pool.num_gpu_blocks + 1
+        if self.mamba_cache_mode != "align":
+            # Allocate extra `num_speculative_blocks` blocks for
+            # speculative decoding (MTP/EAGLE) with linear attention.
+            if self.num_speculative_blocks > 0:
+                num_tokens += (
+                    self.kv_cache_spec.block_size * self.num_speculative_blocks
+                )
+            return super().get_num_blocks_to_allocate(
+                request_id,
+                num_tokens,
+                new_computed_blocks,
+                total_computed_tokens,
+                num_local_computed_tokens,
+                num_tokens_main_model,
+                apply_admission_cap=apply_admission_cap,
+            )
+        else:
+            # We don't allocate blocks for lookahead tokens in align mode, because if
+            # x * block_size tokens are scheduled, num_tokens is
+            # x * block_size + num_lookahead_tokens and breaks the alignment.
+            # We can ignore lookahead tokens because current draft models don't have
+            # mamba layers.
+            num_tokens = num_tokens_main_model
+
+            # NOTE(tdouble): this is an over-estimate of how many blocks we need because
+            # num_tokens can include draft tokens that will later be rejected.
+            num_required_blocks = (
+                cdiv(num_tokens, self.block_size) + self.num_speculative_blocks
+            )
+            num_new_blocks = (
+                num_required_blocks
+                - len(new_computed_blocks)
+                - len(self.req_to_blocks[request_id])
+            )
+            has_partial_hit = (
+                self._has_partial_local_hit(
+                    new_computed_blocks, num_local_computed_tokens
+                )
+                or request_id in self._partial_hit_reqs
+            )
+            if has_partial_hit:
+                num_new_blocks = max(num_new_blocks, 0) + 1
+            checkpoint_position = get_mamba_prefill_checkpoint_position(
+                num_tokens,
+                self.block_pool.hash_block_size,
+                self.drop_eagle_checkpoint_block,
+            )
+            if not self._needs_internal_checkpoint(
+                request_id,
+                total_computed_tokens,
+                num_tokens,
+                checkpoint_position,
+            ):
+                checkpoint_position = 0
+            checkpoint_block = int(checkpoint_position > 0)
+            if not apply_admission_cap:
+                if checkpoint_position > 0:
+                    checkpoint_idx = cdiv(num_tokens, self.block_size) - 2
+                    self._checkpoints[request_id] = (
+                        checkpoint_position,
+===== E. RETENTION / CHECKPOINT POLICY =====
+                        (
+                            request.request_id,
+                            self.kv_cache_group_id,
+                            block,
+                            block.block_hash_num_tokens,
+                        )
+                    )
+
+    def new_step_starts(self) -> None:
+        self.cached_blocks_this_step.clear()
+
+    def _cache_partial_tail_block(
+        self,
+        request: Request,
+        num_tokens: int,
+        retention_interval: int | None,
+    ) -> BlockHashWithGroupId | None:
+        hash_block_size = self.block_pool.hash_block_size
+        # Re-key the reserved block at its exported checkpoint boundary.
+        checkpoint = self._checkpoints.get(request.request_id)
+        if checkpoint is not None:
+            checkpoint_position, checkpoint_idx = checkpoint
+            blocks = self.req_to_blocks[request.request_id]
+            assert 0 <= checkpoint_idx < len(blocks)
+            checkpoint_block = blocks[checkpoint_idx]
+            # The prompt's final chunk caches only up to its last full block,
+            # so ``num_tokens < num_prompt_tokens`` holds there too; its
+            # checkpoint is the prompt's reusable boundary, not a transient one.
+            is_prompt_checkpoint = (
+                checkpoint_position
+                == get_mamba_prefill_checkpoint_position(
+                    request.num_prompt_tokens,
+                    hash_block_size,
+                    self.drop_eagle_checkpoint_block,
+                )
+            )
+            if (
+                retention_interval == 0
+                and num_tokens < request.num_prompt_tokens
+                and not is_prompt_checkpoint
+                and checkpoint_position != request.shared_prefix_boundary
+            ):
+                # retention_interval == 0 keeps this transient checkpoint
+                # request-local. The slot may carry a hash from this step's
+                # full-block pass; that must go too, since the checkpoint
+                # state is about to overwrite the block.
+                self.block_pool._maybe_evict_cached_block(checkpoint_block)
+                return None
+            if checkpoint_block.block_hash_num_tokens == checkpoint_position:
+                return None
+            return self.block_pool.cache_partial_block(
+                request=request,
+                block=checkpoint_block,
+                num_tokens=checkpoint_position,
+                kv_cache_group_id=self.kv_cache_group_id,
+                block_size=self.block_size,
+                replace_existing_hashes=True,
+            )
+        if self.block_size == hash_block_size:
+            return None
+        if num_tokens % self.block_size == 0:

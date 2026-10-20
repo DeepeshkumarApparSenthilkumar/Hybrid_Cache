@@ -1,0 +1,40 @@
+===== FULL SHAREGPT SSM ALIGNMENT ANALYSIS =====
+Runtime requests: 466
+Unique traced requests: 466
+Total scheduler trace records: 645
+
+===== CONFIGURATION =====
+Block size: 544 tokens
+Hash block size: 544 tokens
+Internal checkpoint used: False
+
+===== ALIGNMENT SPLITS =====
+Clipped scheduler chunks: 179
+Aligned clipped chunks: 179
+Requests with >=1 aligned split: 179
+
+Aligned boundary positions:
+    544 tokens : 76
+   1088 tokens : 58
+   1632 tokens : 45
+
+===== PREFIX REUSE =====
+Requests starting above token 0: 178
+Fraction starting with reused prefix: 38.20%
+Reuse starting positions:
+    544 tokens : 98
+   1088 tokens : 67
+   1632 tokens : 13
+
+===== FINAL TAIL AFTER LAST ALIGNED BOUNDARY =====
+Mean tail: 224.55 tokens
+Median tail: 195.50 tokens
+Maximum tail: 543 tokens
+
+===== LATENCY =====
+Mean E2E: 0.1308 s
+Median E2E: 0.1239 s
+Minimum E2E: 0.0465 s
+Maximum E2E: 0.2591 s
+
+Saved boundary summary: results/full_sharegpt/ssm_alignment_summary.csv

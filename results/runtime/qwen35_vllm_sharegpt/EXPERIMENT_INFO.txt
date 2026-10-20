@@ -1,0 +1,74 @@
+Experiment: Qwen3.5-0.8B hybrid SSM/KV cache characterization
+Serving engine: vLLM
+vLLM commit: ac68c3087215e0a4f3cdfa218508c6aada57235d
+vLLM version: 0.30.1rc1.dev396+gac68c3087
+
+Model: Qwen/Qwen3.5-0.8B
+Workload: ShareGPT multi-turn
+Requests: 466
+Successful requests: 466
+
+Hardware:
+NVIDIA Quadro RTX 6000
+24 GB VRAM
+Driver 560.35.05
+
+Runtime configuration:
+max_model_len = 8192
+gpu_memory_utilization = 0.55
+dtype = float16
+prefix caching = enabled
+KV cache metrics = enabled
+mamba_cache_mode = align
+block_size = 544
+effective_attention_block_size = 544
+mamba_block_size = 544
+mamba_ssm_cache_dtype = float32
+
+Runtime findings:
+Scheduler trace records = 645
+Alignment-induced scheduler splits = 179
+Requests with aligned split = 179 / 466
+Aligned split positions:
+  544  = 76
+  1088 = 58
+  1632 = 45
+
+Requests starting with reused prefix = 178 / 466 = 38.20%
+Reuse start positions:
+  544  = 98
+  1088 = 67
+  1632 = 13
+
+Prefix cache queries = 354879 tokens
+Prefix cache hits = 147424 tokens
+Prefix cache hit rate = 41.54%
+Cached-token block equivalents = 271 x 544 tokens
+
+Mean residual tail = 224.55 tokens
+Median residual tail = 195.50 tokens
+Maximum residual tail = 543 tokens
+
+Mean E2E latency = 0.1308 s
+Median E2E latency = 0.1239 s
+Minimum E2E latency = 0.0465 s
+Maximum E2E latency = 0.2591 s
+
+Dedicated internal prefill checkpoint mechanism observed = False
+
+Qwen GDN state-page characterization:
+Useful state page = 1060 KiB
+Aligned physical page = 1088 KiB
+Padding = 28 KiB
+Padding overhead = approximately 2.64%
+
+Important interpretation:
+Do not describe the result as "vLLM checkpoints every 544 tokens."
+The dedicated internal checkpoint mechanism was disabled.
+Under mamba_cache_mode=align, the scheduler materializes reusable SSM
+state at 544-token-aligned block boundaries. Runtime instrumentation
+observed alignment-induced scheduler splits at 544, 1088, and 1632 tokens.
+
+Also do not interpret the 271 cached-token block equivalents as
+271 SSM checkpoint events. Prefix-cache metrics and scheduler
+materialization events are separate measurements.

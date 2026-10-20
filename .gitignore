@@ -22,3 +22,10 @@ backups/
 # Temporary files
 *.tmp
 .DS_Store
+
+# Real-workload datasets (download locally; do not commit)
+workloads/sharegpt/raw/
+
+# Transferred experiment bundles / temporary packaging
+transfer_bundle/
+results/runtime/**/*.tar.gz
