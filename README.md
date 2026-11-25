@@ -169,7 +169,7 @@ The attention component requires approximately:
 
 Falcon-H1 therefore represents a different hybrid organization from Qwen3.5: instead of alternating recurrent and full-attention layers, attention and state-space computation coexist within the hybrid decoder layers.
 
-The current Falcon results are architecture/source-derived characterizations. Serving-engine allocation and cache granularity still need to be measured experimentally.
+The tracked Falcon files characterize the architecture and derive cache-state sizes. A later agentic serving run reported an 832-token aligned block. See the workload results below for the recorded measurements and artifact availability.
 
 ---
 
@@ -234,23 +234,55 @@ One emerging observation is that **KV cache alone is not sufficient to describe 
 
 ---
 
-## Repository Structure
+## Workloads and experiment results
 
-```text
-architecture/
-├── qwen35_0.8b/
-├── falcon_h1_0.5b/
-├── kimi_linear_48b_a3b/
-└── gemma3_1b/
+| Workload | Tracked inputs | Tracked measurements |
+|---|---|---|
+| ShareGPT multi-turn | [466 requests from 100 conversations](workloads/sharegpt/sharegpt_multiturn_100.jsonl), [metadata CSV](workloads/sharegpt/sharegpt_multiturn_100_metadata.csv), and [preparation script](scripts/workloads/prepare_sharegpt_workload.py) | Earlier instrumented Qwen run. The later controlled Qwen and Falcon sweep outputs are absent from Git. |
+| Synthetic agentic multi-step | [500 requests from 100 conversations](workloads/agentic/agentic_multistep_100.jsonl), five turns per conversation | The Qwen and Falcon run outputs are absent from Git. Recorded headline figures are listed below. |
 
-scripts/
-├── analysis/
-└── vllm/
+### Instrumented Qwen ShareGPT run
 
-results/
-├── analysis/
-└── vllm/
+The [experiment record](results/runtime/qwen35_vllm_sharegpt/EXPERIMENT_INFO.txt) documents the vLLM revision, hardware, and cache settings. All 466 requests succeeded. The aligned block size was 544 tokens, and 147,424 of 354,879 queried tokens hit the prefix cache (41.54%). Scheduler tracing recorded 179 alignment-induced splits, and 178 requests started with a reused prefix. The [experiment bundle](results/runtime/qwen35_vllm_sharegpt/full_experiment) contains request CSVs, Prometheus snapshots, server logs, and scheduler traces. The [earlier repeated-prefix baseline](results/vllm/qwen35_rtx6000) also contains raw measurements.
 
-plots/
-├── architecture/
-└── vllm/
+### Agentic benchmark at client concurrency 8
+
+These figures come from the experiment notes. The underlying measurements are absent from Git.
+
+| Metric | Qwen3.5-0.8B | Falcon-H1-0.5B |
+|---|---:|---:|
+| Successful requests | 500/500 | 500/500 |
+| Throughput (requests/s) | 34.08 | 26.26 |
+| Median time to first token (ms) | 105.66 | 176.92 |
+| Median time per output token (ms/token) | 8.30 | 6.81 |
+| Prefix-cache token hit rate | 69.59% | 24.76% |
+| Aligned cache block (tokens) | 576 | 832 |
+
+Cache warm-up and request ordering can affect observed hit rates. The [tracked alignment comparison](scripts/profiling/compare_workload_alignment.py) estimates aligned-token coverage from Qwen-tokenized ShareGPT lengths using the earlier 544- and 800-token block sizes.
+
+### Run the controlled benchmarks
+
+From the repository root, install the Python client dependency `aiohttp` and start a vLLM server for the selected model. The runner defaults to `http://127.0.0.1:8000`. Qwen uses the chat completions endpoint, and Falcon uses the completions endpoint.
+
+```bash
+# ShareGPT concurrency sweep. Start the corresponding model before each command.
+bash scripts/serving/run_concurrency_sweep.sh qwen
+bash scripts/serving/run_concurrency_sweep.sh falcon
+
+# Example agentic replay. Use --model falcon with the Falcon server.
+python scripts/serving/run_controlled_load.py --model qwen \
+  --input workloads/agentic/agentic_multistep_100.jsonl \
+  --limit 500 --concurrency 8 --output-root results/runtime/agentic_load
+```
+
+The ShareGPT sweep runs at concurrency 1, 2, 4, 8, 16, and 32 and requires a server with the prefix-cache reset endpoint enabled. The runner writes request timings, a run summary, and before/after Prometheus snapshots under the output root. The commands above replay the tracked inputs. The exact launch configurations for the later controlled and agentic runs are absent from the repository.
+
+## Repository structure
+
+| Directory | Contents |
+|---|---|
+| [`architecture/`](architecture) | Model configurations and cache-state derivations |
+| [`workloads/`](workloads) | Prepared ShareGPT and synthetic agentic inputs |
+| [`scripts/`](scripts) | Architecture analysis, profiling, workload preparation, serving benchmarks, and vLLM baselines |
+| [`results/`](results) | Architecture tables, ShareGPT analysis and traces, and Qwen baseline results |
+| [`plots/`](plots) | Architecture, ShareGPT, runtime alignment, and vLLM baseline figures |
